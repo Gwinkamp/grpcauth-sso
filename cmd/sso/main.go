@@ -3,6 +3,8 @@ package main
 import (
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/Gwinkamp/grpcauth-sso/internal/app"
 	"github.com/Gwinkamp/grpcauth-sso/internal/config"
@@ -25,7 +27,17 @@ func main() {
 	)
 
 	application := app.New(log, cfg.GRPC.Port, cfg.StoragePath, cfg.TokenTTL)
-	application.AuthApp.MustRun()
+
+	go application.AuthApp.MustRun()
+
+	// Graceful shutdown
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
+
+	<-stop
+
+	application.AuthApp.Stop()
+	log.Info("приложение остановлено")
 }
 
 func setupLogger(env string) *slog.Logger {
@@ -45,7 +57,7 @@ func setupLogger(env string) *slog.Logger {
 			slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}),
 		)
 	default:
-		panic("Отсутствует конфигурация логгера для окружения: " + env)
+		panic("отсутствует конфигурация логгера для окружения: " + env)
 	}
 
 	return log
