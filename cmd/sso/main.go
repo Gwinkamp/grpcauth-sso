@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/Gwinkamp/grpcauth-sso/internal/app"
 	"github.com/Gwinkamp/grpcauth-sso/internal/config"
 )
 
@@ -19,13 +20,12 @@ func main() {
 	log := setupLogger(cfg.Env)
 
 	log.Info(
-		"Запуск приложения",
+		"запуск приложения",
 		slog.String("env", cfg.Env),
 	)
 
-	// TODO: инициализировать приложение (app)
-
-	// TODO: запустить gRPC-сурвер приложения
+	application := app.New(log, cfg.GRPC.Port, cfg.StoragePath, cfg.TokenTTL)
+	application.AuthApp.MustRun()
 }
 
 func setupLogger(env string) *slog.Logger {
