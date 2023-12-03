@@ -61,8 +61,7 @@ func (a *AuthApp) Run() error {
 func (a *AuthApp) Stop() {
 	const operation = "authapp.Stop"
 
-	a.log.With(slog.String("operation", operation)).
-		Info("Остановка gRPC сервера", slog.Int("port", a.port))
-
 	a.gRPCServer.GracefulStop()
+
+	a.log.With(slog.String("operation", operation)).Info("gRPC сервер остановлен")
 }
