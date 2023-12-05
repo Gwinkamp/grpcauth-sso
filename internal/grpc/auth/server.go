@@ -2,30 +2,41 @@ package auth
 
 import (
 	"context"
+	"log/slog"
 
 	ssov1 "github.com/Gwinkamp/grpcauth-contracts/gen/go"
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
+type Auth interface {
+	Login(ctx context.Context, email, password string, serviceId uuid.UUID) (token string, err error)
+	RegisterNewUser(ctx context.Context, email, password string) (userId uuid.UUID, err error)
+	IsAdmin(ctx context.Context, userId uuid.UUID) (bool, error)
+}
+
 type AuthServerAPI struct {
 	ssov1.UnimplementedAuthServer
 	validate *validator.Validate
+	auth     Auth
+	log      *slog.Logger
 }
 
-func NewAuthServer() *AuthServerAPI {
+func NewAuthServer(auth Auth, logger *slog.Logger) *AuthServerAPI {
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	registerAuthServerValidationRules(validate)
 
 	return &AuthServerAPI{
 		validate: validate,
+		log:      logger,
 	}
 }
 
-func Register(gRPC *grpc.Server) {
-	ssov1.RegisterAuthServer(gRPC, NewAuthServer())
+func Register(gRPC *grpc.Server, auth Auth, logger *slog.Logger) {
+	ssov1.RegisterAuthServer(gRPC, NewAuthServer(auth, logger))
 }
 
 func (s *AuthServerAPI) Login(ctx context.Context, req *ssov1.LoginRequest) (*ssov1.LoginResponse, error) {
@@ -33,7 +44,23 @@ func (s *AuthServerAPI) Login(ctx context.Context, req *ssov1.LoginRequest) (*ss
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	return &ssov1.LoginResponse{AccessToken: "dummy access token"}, nil
+	token, err := s.auth.Login(
+		ctx,
+		req.GetEmail(),
+		req.GetPassword(),
+		uuid.MustParse(req.GetServiceId()),
+	)
+	if err != nil {
+		// TODO: обработать различные ошибки
+		s.log.Error(
+			"внутренняя ошибка авторизации",
+			slog.String("email", req.GetEmail()),
+			slog.String("serviceId", req.GetServiceId()),
+		)
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	return &ssov1.LoginResponse{AccessToken: token}, nil
 }
 
 func (s *AuthServerAPI) Register(ctx context.Context, req *ssov1.RegisterRequest) (*ssov1.RegisterResponse, error) {
@@ -41,7 +68,17 @@ func (s *AuthServerAPI) Register(ctx context.Context, req *ssov1.RegisterRequest
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	return &ssov1.RegisterResponse{UserId: "bb493e9b-ee5b-4c28-818c-657bcf099460"}, nil
+	userId, err := s.auth.RegisterNewUser(ctx, req.GetEmail(), req.GetPassword())
+	if err != nil {
+		// TODO: обработать различные ошибки
+		s.log.Error(
+			"внутренняя ошибка регистрации нового пользователя",
+			slog.String("email", req.GetEmail()),
+		)
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	return &ssov1.RegisterResponse{UserId: userId.String()}, nil
 }
 
 func (s *AuthServerAPI) IsAdmin(ctx context.Context, req *ssov1.IsAdminRequest) (*ssov1.IsAdminResponse, error) {
@@ -49,5 +86,15 @@ func (s *AuthServerAPI) IsAdmin(ctx context.Context, req *ssov1.IsAdminRequest) 
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	return &ssov1.IsAdminResponse{IsAdmin: false}, nil
+	isAdmin, err := s.auth.IsAdmin(ctx, uuid.MustParse(req.GetUserId()))
+	if err != nil {
+		// TODO: обработать различные ошибки
+		s.log.Error(
+			"внутренняя идентификации администратора",
+			slog.String("email", req.GetUserId()),
+		)
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+
+	return &ssov1.IsAdminResponse{IsAdmin: isAdmin}, nil
 }
