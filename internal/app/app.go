@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/Gwinkamp/grpcauth-sso/internal/app/authapp"
+	"github.com/Gwinkamp/grpcauth-sso/internal/services/auth"
+	"github.com/Gwinkamp/grpcauth-sso/internal/storage/sqlite"
 )
 
 type App struct {
@@ -17,11 +19,16 @@ func New(
 	storagePath string,
 	tokenTTL time.Duration,
 ) *App {
-	// TODO: инициализировать харнилище (storage)
+	storage, err := sqlite.New(storagePath)
+	if err != nil {
+		panic(err)
+	}
 
-	authApp := authapp.New(log, grpcPort)
+	authService := auth.New(log, storage, storage, tokenTTL)
+
+	grpcApp := authapp.New(log, authService, grpcPort)
 
 	return &App{
-		AuthApp: authApp,
+		AuthApp: grpcApp,
 	}
 }

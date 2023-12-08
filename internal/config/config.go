@@ -26,13 +26,17 @@ func MustLoad() *Config {
 		panic("Не задан путь до файла с конфигурацией")
 	}
 
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		panic("Не найден файл конфигурации: " + path)
+	return MustLoadByPath(path)
+}
+
+func MustLoadByPath(pathToConfig string) *Config {
+	if _, err := os.Stat(pathToConfig); os.IsNotExist(err) {
+		panic("Не найден файл конфигурации: " + pathToConfig)
 	}
 
 	var cfg Config
 
-	if err := cleanenv.ReadConfig(path, &cfg); err != nil {
+	if err := cleanenv.ReadConfig(pathToConfig, &cfg); err != nil {
 		panic("Ошибка чтения файла конфигурации: " + err.Error())
 	}
 

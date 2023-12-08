@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/Gwinkamp/grpcauth-sso/internal/domain/models"
+	"github.com/Gwinkamp/grpcauth-sso/internal/domain/providers"
 	"github.com/Gwinkamp/grpcauth-sso/internal/lib/jwt"
 	"github.com/Gwinkamp/grpcauth-sso/internal/storage"
 	"github.com/google/uuid"
@@ -22,39 +22,23 @@ var (
 
 type Auth struct {
 	log             *slog.Logger
-	userCreator     UserCreator
-	userProvider    UserProvider
-	serviceProvider ServiceProvider
+	userProvider    providers.UserProvider
+	serviceProvider providers.ServiceProvider
 	tokenTTL        time.Duration
 }
 
 func New(
 	log *slog.Logger,
-	userCreator UserCreator,
-	userProvider UserProvider,
-	serviceProvider ServiceProvider,
+	userProvider providers.UserProvider,
+	serviceProvider providers.ServiceProvider,
 	tokenTTL time.Duration,
 ) *Auth {
 	return &Auth{
 		log:             log,
-		userCreator:     userCreator,
 		userProvider:    userProvider,
 		serviceProvider: serviceProvider,
 		tokenTTL:        tokenTTL,
 	}
-}
-
-type UserCreator interface {
-	CreateUser(ctx context.Context, email string, passHash []byte) (id uuid.UUID, err error)
-}
-
-type UserProvider interface {
-	User(ctx context.Context, email string) (models.User, error)
-	IsAdmin(ctx context.Context, userId uuid.UUID) (bool, error)
-}
-
-type ServiceProvider interface {
-	Service(ctx context.Context, serviceId uuid.UUID) (models.Service, error)
 }
 
 // Login проверяет данные пользователя в системе, авторизует его и выдает токен доступа
@@ -72,13 +56,13 @@ func (a *Auth) Login(
 		slog.String("service_id", serviceId.String()),
 	)
 
-	user, err := a.userProvider.User(ctx, email)
+	user, err := a.userProvider.GetUser(ctx, email)
 	if err != nil {
 		if errors.Is(err, storage.ErrUserNotFound) {
 			log.Warn("не найден пользователь", slog.String("error", err.Error()))
 			return "", fmt.Errorf("%s: %w", operation, ErrInvalidCredentials)
 		}
-	
+
 		return "", fmt.Errorf("%s: %w", operation, err)
 	}
 
@@ -87,7 +71,7 @@ func (a *Auth) Login(
 		return "", fmt.Errorf("%s: %w", operation, ErrInvalidCredentials)
 	}
 
-	service, err := a.serviceProvider.Service(ctx, serviceId)
+	service, err := a.serviceProvider.GetService(ctx, serviceId)
 	if err != nil {
 		if errors.Is(err, storage.ErrServiceNotFound) {
 			log.Warn("не найден сервис", slog.String("error", err.Error()))
@@ -108,7 +92,7 @@ func (a *Auth) Login(
 // RegisterNewUser проверяет данные нового пользователя и создает его
 func (a *Auth) RegisterNewUser(
 	ctx context.Context,
-	email, string,
+	email string,
 	password string,
 ) (uuid.UUID, error) {
 	const operation = "Auth.RegisterNewUser"
@@ -124,11 +108,11 @@ func (a *Auth) RegisterNewUser(
 		return uuid.Nil, fmt.Errorf("%s: %w", operation, err)
 	}
 
-	id, err := a.userCreator.CreateUser(ctx, email, passHash)
+	id, err := a.userProvider.CreateUser(ctx, email, passHash)
 	if err != nil {
 		if errors.Is(err, storage.ErrUserAlreadyExists) {
 			log.Warn("пользователь уже существует", slog.String("error", err.Error()))
-			return uuid.Nil, fmt.Errorf("%s: %w", operation, err)
+			return uuid.Nil, fmt.Errorf("%s: %w", operation, ErrUserAlreadyExists)
 		}
 		log.Error("ошибка сохранения пользователя в хранилище", slog.String("error", err.Error()))
 		return uuid.Nil, fmt.Errorf("%s: %w", operation, err)

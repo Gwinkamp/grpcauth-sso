@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 
+	"github.com/Gwinkamp/grpcauth-sso/internal/domain/app"
 	authgrpc "github.com/Gwinkamp/grpcauth-sso/internal/grpc/auth"
 	"google.golang.org/grpc"
 )
@@ -16,9 +17,9 @@ type AuthApp struct {
 }
 
 // New здает новый gRPC сервер приложения AuthServer
-func New(log *slog.Logger, port int) *AuthApp {
+func New(log *slog.Logger, authService app.Auth, port int) *AuthApp {
 	gRPCServer := grpc.NewServer()
-	authgrpc.Register(gRPCServer)
+	authgrpc.Register(gRPCServer, authService, log)
 
 	return &AuthApp{
 		log:        log,

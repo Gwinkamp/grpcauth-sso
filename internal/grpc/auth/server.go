@@ -2,9 +2,12 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	ssov1 "github.com/Gwinkamp/grpcauth-contracts/gen/go"
+	"github.com/Gwinkamp/grpcauth-sso/internal/domain/app"
+	"github.com/Gwinkamp/grpcauth-sso/internal/services/auth"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -12,30 +15,25 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type Auth interface {
-	Login(ctx context.Context, email, password string, serviceId uuid.UUID) (token string, err error)
-	RegisterNewUser(ctx context.Context, email, password string) (userId uuid.UUID, err error)
-	IsAdmin(ctx context.Context, userId uuid.UUID) (bool, error)
-}
-
 type AuthServerAPI struct {
 	ssov1.UnimplementedAuthServer
 	validate *validator.Validate
-	auth     Auth
+	auth     app.Auth
 	log      *slog.Logger
 }
 
-func NewAuthServer(auth Auth, logger *slog.Logger) *AuthServerAPI {
+func NewAuthServer(auth app.Auth, logger *slog.Logger) *AuthServerAPI {
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	registerAuthServerValidationRules(validate)
 
 	return &AuthServerAPI{
 		validate: validate,
+		auth:     auth,
 		log:      logger,
 	}
 }
 
-func Register(gRPC *grpc.Server, auth Auth, logger *slog.Logger) {
+func Register(gRPC *grpc.Server, auth app.Auth, logger *slog.Logger) {
 	ssov1.RegisterAuthServer(gRPC, NewAuthServer(auth, logger))
 }
 
@@ -51,7 +49,13 @@ func (s *AuthServerAPI) Login(ctx context.Context, req *ssov1.LoginRequest) (*ss
 		uuid.MustParse(req.GetServiceId()),
 	)
 	if err != nil {
-		// TODO: обработать различные ошибки
+		if errors.Is(err, auth.ErrInvalidCredentials) {
+			return nil, status.Error(codes.InvalidArgument, "Неверный логин или пароль")
+		}
+		if errors.Is(err, auth.ErrServiceNotFound) {
+			return nil, status.Error(codes.InvalidArgument, "Сервис не найден")
+		}
+
 		s.log.Error(
 			"внутренняя ошибка авторизации",
 			slog.String("email", req.GetEmail()),
@@ -70,7 +74,10 @@ func (s *AuthServerAPI) Register(ctx context.Context, req *ssov1.RegisterRequest
 
 	userId, err := s.auth.RegisterNewUser(ctx, req.GetEmail(), req.GetPassword())
 	if err != nil {
-		// TODO: обработать различные ошибки
+		if errors.Is(err, auth.ErrUserAlreadyExists) {
+			return nil, status.Error(codes.AlreadyExists, "пользователь уже зарегистрирован")
+		}
+
 		s.log.Error(
 			"внутренняя ошибка регистрации нового пользователя",
 			slog.String("email", req.GetEmail()),
@@ -88,7 +95,10 @@ func (s *AuthServerAPI) IsAdmin(ctx context.Context, req *ssov1.IsAdminRequest) 
 
 	isAdmin, err := s.auth.IsAdmin(ctx, uuid.MustParse(req.GetUserId()))
 	if err != nil {
-		// TODO: обработать различные ошибки
+		if errors.Is(err, auth.ErrInvalidCredentials) {
+			return nil, status.Error(codes.NotFound, "пользователь не найден")
+		}
+
 		s.log.Error(
 			"внутренняя идентификации администратора",
 			slog.String("email", req.GetUserId()),
