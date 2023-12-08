@@ -133,10 +133,10 @@ func TestRegisterLogin_UndefinedServiceID(t *testing.T) {
 	defer s.Storage.DeleteUser(ctx, uuid.MustParse(regResp.GetUserId()))
 
 	loginResp, err := s.AuthClient.Login(ctx, &ssov1.LoginRequest{
-        Email:     email,
-        Password:  password,
-        ServiceId: uuid.NewString(),
-    })
+		Email:     email,
+		Password:  password,
+		ServiceId: uuid.NewString(),
+	})
 	require.Error(t, err)
 
 	assert.Nil(t, loginResp)
